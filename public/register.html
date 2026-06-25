@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Register | LiveStream</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>LiveStream</h1>
+    <nav></nav>
+  </header>
+  <div class="container" style="max-width: 420px;">
+    <div class="card">
+      <h2>Create account</h2>
+      <div id="err" class="error"></div>
+      <form id="regForm">
+        <input type="text" id="username" placeholder="Username" required />
+        <input type="password" id="password" placeholder="Password" required minlength="4" />
+        <select id="role" required>
+          <option value="viewer">Viewer — watch live streams</option>
+          <option value="creator">Creator — start live streams</option>
+        </select>
+        <button type="submit">Register</button>
+      </form>
+      <p class="muted">Have an account? <a href="/login.html" style="color:#ff0033">Login</a></p>
+    </div>
+  </div>
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('regForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const role = document.getElementById('role').value;
+      try {
+        const data = await api('/api/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({ username, password, role })
+        });
+        Auth.save(data.token, data.user);
+        location.href = '/';
+      } catch (err) {
+        document.getElementById('err').textContent = err.message;
+      }
+    });
+  </script>
+</body>
+</html>

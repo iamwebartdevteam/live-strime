@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Go Live | LiveStream</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>LiveStream</h1>
+    <nav></nav>
+  </header>
+  <div class="container">
+    <div class="layout">
+      <div>
+        <div class="card">
+          <h2>Go Live</h2>
+          <div id="status" class="muted">Not streaming</div>
+          <video id="preview" autoplay muted playsinline></video>
+          <div style="margin-top:14px">
+            <input type="text" id="title" placeholder="Stream title" />
+            <select id="source">
+              <option value="camera">Camera + Microphone</option>
+              <option value="screen">Screen + System audio + Microphone</option>
+              <option value="screen-only">Screen only (no mic)</option>
+            </select>
+            <div class="row">
+              <button id="startBtn">Start Streaming</button>
+              <button id="stopBtn" class="secondary" disabled>Stop</button>
+            </div>
+          </div>
+          <div id="err" class="error"></div>
+          <div id="info" class="muted"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h3>Live chat</h3>
+          <div class="chat">
+            <div id="chatMessages" class="chat-messages"></div>
+            <div class="chat-input">
+              <input type="text" id="chatInput" placeholder="Say something..." />
+              <button id="chatSend">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    if (!Auth.require()) {} else if (Auth.user().role !== 'creator') {
+      document.body.innerHTML = '<div class="container"><div class="card"><h2>Creators only</h2><p>You are signed in as a viewer. Only creator accounts can start streams.</p><a href="/">Back to streams</a></div></div>';
+    } else {
+      const socket = io({ auth: { token: Auth.token() } });
+
+      const video = document.getElementById('preview');
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const statusEl = document.getElementById('status');
+      const errEl = document.getElementById('err');
+      const infoEl = document.getElementById('info');
+      const titleInput = document.getElementById('title');
+
+      let mediaStream = null;
+      let extraStreams = [];
+      let audioCtx = null;
+      let recorder = null;
+      let currentStreamId = null;
+
+      async function getCameraStream() {
+        return navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      }
+
+      async function getScreenStream(withMic) {
+        const display = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: 30 },
+          audio: true
+        });
+        extraStreams.push(display);
+
+        if (!withMic) return display;
+
+        let mic;
+        try {
+          mic = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          extraStreams.push(mic);
+        } catch (e) {
+          console.warn('Mic denied, continuing without it:', e.message);
+          return display;
+        }
+
+        const sysTrack = display.getAudioTracks()[0];
+        const micTrack = mic.getAudioTracks()[0];
+
+        if (!sysTrack && !micTrack) return display;
+        if (!sysTrack) {
+          display.addTrack(micTrack);
+          return display;
+        }
+        if (!micTrack) return display;
+
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const dest = audioCtx.createMediaStreamDestination();
+        audioCtx.createMediaStreamSource(new MediaStream([sysTrack])).connect(dest);
+        audioCtx.createMediaStreamSource(new MediaStream([micTrack])).connect(dest);
+
+        const mixed = new MediaStream();
+        display.getVideoTracks().forEach(t => mixed.addTrack(t));
+        dest.stream.getAudioTracks().forEach(t => mixed.addTrack(t));
+        return mixed;
+      }
+
+      function stopAllTracks() {
+        if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+        extraStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
+        extraStreams = [];
+        if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+        mediaStream = null;
+      }
+
+      function pickMimeType() {
+        const options = [
+          'video/webm;codecs=vp8,opus',
+          'video/webm;codecs=vp9,opus',
+          'video/webm'
+        ];
+        for (const t of options) {
+          if (MediaRecorder.isTypeSupported(t)) return t;
+        }
+        return '';
+      }
+
+      startBtn.onclick = async () => {
+        errEl.textContent = '';
+        try {
+          const source = document.getElementById('source').value;
+          if (source === 'camera') {
+            mediaStream = await getCameraStream();
+          } else if (source === 'screen') {
+            mediaStream = await getScreenStream(true);
+          } else {
+            mediaStream = await getScreenStream(false);
+          }
+          video.srcObject = mediaStream;
+
+          const videoTrack = mediaStream.getVideoTracks()[0];
+          if (videoTrack) {
+            videoTrack.addEventListener('ended', () => {
+              if (recorder && recorder.state !== 'inactive') stopBtn.click();
+            });
+          }
+
+          const mimeType = pickMimeType();
+          if (!mimeType) throw new Error('Your browser does not support WebM recording');
+
+          socket.emit('creator:start', { title: titleInput.value || undefined, mimeType }, (resp) => {
+            if (resp.error) { errEl.textContent = resp.error; return; }
+            currentStreamId = resp.streamId;
+            statusEl.innerHTML = '<span class="live-badge">LIVE</span> Streaming...';
+            infoEl.textContent = `Stream ID: ${currentStreamId}`;
+
+            recorder = new MediaRecorder(mediaStream, { mimeType, videoBitsPerSecond: 1_500_000 });
+            recorder.ondataavailable = async (e) => {
+              if (e.data && e.data.size > 0) {
+                const buf = await e.data.arrayBuffer();
+                socket.emit('creator:chunk', buf);
+              }
+            };
+            recorder.start(500);
+
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+          });
+        } catch (e) {
+          errEl.textContent = e.message;
+        }
+      };
+
+      stopBtn.onclick = () => {
+        if (recorder && recorder.state !== 'inactive') recorder.stop();
+        stopAllTracks();
+        socket.emit('creator:stop');
+        statusEl.textContent = 'Not streaming';
+        infoEl.textContent = '';
+        currentStreamId = null;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        video.srcObject = null;
+      };
+
+      socket.on('creator:viewer-count', ({ viewers }) => {
+        statusEl.innerHTML = `<span class="live-badge">LIVE</span> Streaming — ${viewers} viewer${viewers === 1 ? '' : 's'}`;
+      });
+
+      const chatMessages = document.getElementById('chatMessages');
+      const chatInput = document.getElementById('chatInput');
+      document.getElementById('chatSend').onclick = sendChat;
+      chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+      function sendChat() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        socket.emit('chat:message', { text });
+        chatInput.value = '';
+      }
+      socket.on('chat:message', m => {
+        const el = document.createElement('div');
+        el.className = 'chat-msg';
+        el.innerHTML = `<span class="user">${escapeHtml(m.username)}</span>: ${escapeHtml(m.text)}`;
+        chatMessages.appendChild(el);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      });
+      function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+    }
+  </script>
+</body>
+</html>

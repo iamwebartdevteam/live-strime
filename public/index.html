@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LiveStream — Browse</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>LiveStream</h1>
+    <nav></nav>
+  </header>
+  <div class="container">
+    <h2>Live now</h2>
+    <div id="streams" class="stream-grid"></div>
+    <p id="empty" class="muted" style="display:none">No live streams right now. Check back soon.</p>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    if (!Auth.require()) {} else {
+      const socket = io({ auth: { token: Auth.token() } });
+
+      async function load() {
+        try {
+          const { streams } = await api('/api/streams');
+          const grid = document.getElementById('streams');
+          const empty = document.getElementById('empty');
+          grid.innerHTML = '';
+          if (!streams.length) { empty.style.display = 'block'; return; }
+          empty.style.display = 'none';
+          for (const s of streams) {
+            const card = document.createElement('div');
+            card.className = 'stream-card';
+            card.innerHTML = `
+              <div><span class="live-badge">LIVE</span></div>
+              <h3 style="margin:10px 0 4px">${escapeHtml(s.title)}</h3>
+              <div class="muted">by ${escapeHtml(s.creator)}</div>
+              <div class="muted">${s.viewers} watching</div>
+            `;
+            card.onclick = () => location.href = `/viewer.html?id=${encodeURIComponent(s.id)}`;
+            grid.appendChild(card);
+          }
+        } catch (e) {
+          if (String(e.message).includes('token')) Auth.logout();
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      }
+
+      socket.on('streams:updated', load);
+      load();
+    }
+  </script>
+</body>
+</html>

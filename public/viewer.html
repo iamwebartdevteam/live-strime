@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Watch | LiveStream</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>LiveStream</h1>
+    <nav></nav>
+  </header>
+  <div class="container">
+    <div class="layout">
+      <div>
+        <div class="card">
+          <h2 id="title">Loading...</h2>
+          <div class="muted" id="meta"></div>
+          <video id="player" autoplay playsinline controls></video>
+          <div id="err" class="error"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h3>Live chat</h3>
+          <div class="chat">
+            <div id="chatMessages" class="chat-messages"></div>
+            <div class="chat-input">
+              <input type="text" id="chatInput" placeholder="Say something..." />
+              <button id="chatSend">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script>
+    if (!Auth.require()) {} else {
+      const params = new URLSearchParams(location.search);
+      const streamId = params.get('id');
+      if (!streamId) { location.href = '/'; }
+
+      const socket = io({ auth: { token: Auth.token() } });
+      const player = document.getElementById('player');
+      const errEl = document.getElementById('err');
+      const titleEl = document.getElementById('title');
+      const metaEl = document.getElementById('meta');
+
+      let mediaSource = null;
+      let sourceBuffer = null;
+      const queue = [];
+
+      function setupMediaSource(mimeType) {
+        mediaSource = new MediaSource();
+        player.src = URL.createObjectURL(mediaSource);
+        mediaSource.addEventListener('sourceopen', () => {
+          try {
+            sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+            sourceBuffer.mode = 'sequence';
+            sourceBuffer.addEventListener('updateend', flush);
+            flush();
+          } catch (e) {
+            errEl.textContent = 'MediaSource error: ' + e.message;
+          }
+        });
+      }
+
+      function flush() {
+        if (!sourceBuffer || sourceBuffer.updating || !queue.length) return;
+        try {
+          sourceBuffer.appendBuffer(queue.shift());
+        } catch (e) {
+          if (e.name === 'QuotaExceededError') {
+            try {
+              const end = player.currentTime - 5;
+              if (end > 0) sourceBuffer.remove(0, end);
+            } catch {}
+          } else {
+            console.error(e);
+          }
+        }
+      }
+
+      socket.on('connect', () => {
+        socket.emit('viewer:join', { streamId }, (resp) => {
+          if (resp.error) { errEl.textContent = resp.error; return; }
+          titleEl.textContent = resp.title;
+          metaEl.textContent = `by ${resp.creator} · ${resp.viewers} watching`;
+          setupMediaSource(resp.mimeType);
+          if (resp.initChunk) {
+            queue.push(resp.initChunk);
+          }
+        });
+      });
+
+      socket.on('viewer:chunk', (chunk) => {
+        queue.push(chunk);
+        flush();
+      });
+
+      socket.on('stream:ended', () => {
+        errEl.textContent = 'The stream has ended.';
+        setTimeout(() => location.href = '/', 2000);
+      });
+
+      window.addEventListener('beforeunload', () => socket.emit('viewer:leave'));
+
+      const chatMessages = document.getElementById('chatMessages');
+      const chatInput = document.getElementById('chatInput');
+      document.getElementById('chatSend').onclick = sendChat;
+      chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+      function sendChat() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        socket.emit('chat:message', { text });
+        chatInput.value = '';
+      }
+      socket.on('chat:message', m => {
+        const el = document.createElement('div');
+        el.className = 'chat-msg';
+        el.innerHTML = `<span class="user">${escapeHtml(m.username)}</span>: ${escapeHtml(m.text)}`;
+        chatMessages.appendChild(el);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      });
+      function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+    }
+  </script>
+</body>
+</html>
