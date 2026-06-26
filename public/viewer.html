@@ -1,12 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <title>Watch | LiveStream</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
-
 <body>
   <header>
     <h1>LiveStream</h1>
@@ -20,8 +18,7 @@
           <div class="muted" id="meta"></div>
           <video id="player" autoplay playsinline controls></video>
           <div id="err" class="error"></div>
-          <button id="leaveBtn" class="secondary" style="margin-top:12px; width:auto; padding:8px 16px;">Leave
-            stream</button>
+          <button id="leaveBtn" class="secondary" style="margin-top:12px; width:auto; padding:8px 16px;">Leave stream</button>
         </div>
       </div>
       <div>
@@ -42,7 +39,7 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/common.js"></script>
   <script>
-    if (!Auth.require()) { } else {
+    if (!Auth.require()) {} else {
       const params = new URLSearchParams(location.search);
       const streamId = params.get('id');
       if (!streamId) { location.href = '/'; }
@@ -88,7 +85,7 @@
             try {
               const end = player.currentTime - 5;
               if (end > 0) sourceBuffer.remove(0, end);
-            } catch { }
+            } catch {}
           } else if (e.name === 'InvalidStateError') {
             resync();
           } else {
@@ -174,9 +171,8 @@
         chatMessages.appendChild(el);
         chatMessages.scrollTop = chatMessages.scrollHeight;
       });
-      function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+      function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     }
   </script>
 </body>
-
 </html>

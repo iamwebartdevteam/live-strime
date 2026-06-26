@@ -1,12 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <title>Go Live | LiveStream</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
-
 <body>
   <header>
     <h1>LiveStream</h1>
@@ -53,7 +51,7 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/common.js"></script>
   <script>
-    if (!Auth.require()) { } else if (Auth.user().role !== 'creator') {
+    if (!Auth.require()) {} else if (Auth.user().role !== 'creator') {
       document.body.innerHTML = '<div class="container"><div class="card"><h2>Creators only</h2><p>You are signed in as a viewer. Only creator accounts can start streams.</p><a href="/">Back to streams</a></div></div>';
     } else {
       const socket = io({ auth: { token: Auth.token() } });
@@ -121,7 +119,7 @@
         if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
         extraStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
         extraStreams = [];
-        if (audioCtx) { audioCtx.close().catch(() => { }); audioCtx = null; }
+        if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
         mediaStream = null;
       }
 
@@ -221,7 +219,7 @@
           }
           if (previousStream) previousStream.getTracks().forEach(t => t.stop());
           previousExtras.forEach(s => s.getTracks().forEach(t => t.stop()));
-          if (previousAudioCtx) previousAudioCtx.close().catch(() => { });
+          if (previousAudioCtx) previousAudioCtx.close().catch(() => {});
 
           mediaStream = newStream;
           video.srcObject = mediaStream;
@@ -280,9 +278,8 @@
         chatMessages.appendChild(el);
         chatMessages.scrollTop = chatMessages.scrollHeight;
       });
-      function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+      function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     }
   </script>
 </body>
-
 </html>
