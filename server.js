@@ -78,6 +78,20 @@ io.on('connection', (socket) => {
     endStream(socket);
   });
 
+  socket.on('creator:switch', ({ mimeType } = {}, ack) => {
+    const streamId = socket.data.streamId;
+    if (!streamId) return ack && ack({ error: 'No active stream' });
+    const stream = streams.get(streamId);
+    if (!stream || stream.creatorSocketId !== socket.id) {
+      return ack && ack({ error: 'Not the stream owner' });
+    }
+    stream.initChunk = null;
+    if (mimeType) stream.mimeType = mimeType;
+    socket.to(`stream:${streamId}`).emit('stream:reset', { mimeType: stream.mimeType });
+    ack && ack({ ok: true });
+    console.log(`[stream:switch] ${streamId}`);
+  });
+
   socket.on('viewer:join', ({ streamId }, ack) => {
     const stream = streams.get(streamId);
     if (!stream) return ack && ack({ error: 'Stream not found' });

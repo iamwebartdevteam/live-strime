@@ -69,6 +69,8 @@
       let audioCtx = null;
       let recorder = null;
       let currentStreamId = null;
+      let currentMimeType = null;
+      let switching = false;
 
       async function getCameraStream() {
         return navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -133,28 +135,43 @@
         return '';
       }
 
+      async function acquireStream(source) {
+        if (source === 'camera') return getCameraStream();
+        if (source === 'screen') return getScreenStream(true);
+        return getScreenStream(false);
+      }
+
+      function startRecorder(mimeType) {
+        recorder = new MediaRecorder(mediaStream, { mimeType, videoBitsPerSecond: 1_500_000 });
+        recorder.ondataavailable = async (e) => {
+          if (e.data && e.data.size > 0) {
+            const buf = await e.data.arrayBuffer();
+            socket.emit('creator:chunk', buf);
+          }
+        };
+        recorder.start(500);
+      }
+
+      function attachEndedHandler() {
+        const videoTrack = mediaStream.getVideoTracks()[0];
+        if (!videoTrack) return;
+        videoTrack.addEventListener('ended', () => {
+          if (switching) return;
+          if (recorder && recorder.state !== 'inactive') stopBtn.click();
+        });
+      }
+
       startBtn.onclick = async () => {
         errEl.textContent = '';
         try {
           const source = document.getElementById('source').value;
-          if (source === 'camera') {
-            mediaStream = await getCameraStream();
-          } else if (source === 'screen') {
-            mediaStream = await getScreenStream(true);
-          } else {
-            mediaStream = await getScreenStream(false);
-          }
+          mediaStream = await acquireStream(source);
           video.srcObject = mediaStream;
-
-          const videoTrack = mediaStream.getVideoTracks()[0];
-          if (videoTrack) {
-            videoTrack.addEventListener('ended', () => {
-              if (recorder && recorder.state !== 'inactive') stopBtn.click();
-            });
-          }
+          attachEndedHandler();
 
           const mimeType = pickMimeType();
           if (!mimeType) throw new Error('Your browser does not support WebM recording');
+          currentMimeType = mimeType;
 
           socket.emit('creator:start', { title: titleInput.value || undefined, mimeType }, (resp) => {
             if (resp.error) { errEl.textContent = resp.error; return; }
@@ -162,14 +179,7 @@
             statusEl.innerHTML = '<span class="live-badge">LIVE</span> Streaming...';
             infoEl.textContent = `Stream ID: ${currentStreamId}`;
 
-            recorder = new MediaRecorder(mediaStream, { mimeType, videoBitsPerSecond: 1_500_000 });
-            recorder.ondataavailable = async (e) => {
-              if (e.data && e.data.size > 0) {
-                const buf = await e.data.arrayBuffer();
-                socket.emit('creator:chunk', buf);
-              }
-            };
-            recorder.start(500);
+            startRecorder(mimeType);
 
             startBtn.disabled = true;
             stopBtn.disabled = false;
@@ -178,6 +188,44 @@
           errEl.textContent = e.message;
         }
       };
+
+      const sourceSelect = document.getElementById('source');
+      sourceSelect.addEventListener('change', async () => {
+        if (!currentStreamId || switching) return;
+        const newSource = sourceSelect.value;
+        const previousStream = mediaStream;
+        const previousExtras = extraStreams;
+        const previousAudioCtx = audioCtx;
+        switching = true;
+        errEl.textContent = '';
+        try {
+          extraStreams = [];
+          audioCtx = null;
+          const newStream = await acquireStream(newSource);
+
+          if (recorder && recorder.state !== 'inactive') recorder.stop();
+          if (previousStream) previousStream.getTracks().forEach(t => t.stop());
+          previousExtras.forEach(s => s.getTracks().forEach(t => t.stop()));
+          if (previousAudioCtx) previousAudioCtx.close().catch(() => {});
+
+          mediaStream = newStream;
+          video.srcObject = mediaStream;
+          attachEndedHandler();
+
+          await new Promise(resolve => {
+            socket.emit('creator:switch', { mimeType: currentMimeType }, () => resolve());
+          });
+          startRecorder(currentMimeType);
+        } catch (e) {
+          errEl.textContent = 'Switch failed: ' + e.message;
+          extraStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
+          extraStreams = previousExtras;
+          audioCtx = previousAudioCtx;
+          mediaStream = previousStream;
+        } finally {
+          switching = false;
+        }
+      });
 
       stopBtn.onclick = () => {
         if (recorder && recorder.state !== 'inactive') recorder.stop();

@@ -18,6 +18,7 @@
           <div class="muted" id="meta"></div>
           <video id="player" autoplay playsinline controls></video>
           <div id="err" class="error"></div>
+          <button id="leaveBtn" class="secondary" style="margin-top:12px; width:auto; padding:8px 16px;">Leave stream</button>
         </div>
       </div>
       <div>
@@ -51,9 +52,11 @@
 
       let mediaSource = null;
       let sourceBuffer = null;
-      const queue = [];
+      let queue = [];
 
       function setupMediaSource(mimeType) {
+        sourceBuffer = null;
+        queue = [];
         mediaSource = new MediaSource();
         player.src = URL.createObjectURL(mediaSource);
         mediaSource.addEventListener('sourceopen', () => {
@@ -101,12 +104,23 @@
         flush();
       });
 
+      socket.on('stream:reset', ({ mimeType }) => {
+        errEl.textContent = '';
+        setupMediaSource(mimeType);
+      });
+
       socket.on('stream:ended', () => {
         errEl.textContent = 'The stream has ended.';
         setTimeout(() => location.href = '/', 2000);
       });
 
       window.addEventListener('beforeunload', () => socket.emit('viewer:leave'));
+
+      document.getElementById('leaveBtn').onclick = () => {
+        socket.emit('viewer:leave');
+        socket.disconnect();
+        location.href = '/';
+      };
 
       const chatMessages = document.getElementById('chatMessages');
       const chatInput = document.getElementById('chatInput');
