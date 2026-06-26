@@ -57,6 +57,9 @@
       function setupMediaSource(mimeType) {
         sourceBuffer = null;
         queue = [];
+        try { player.pause(); } catch {}
+        player.removeAttribute('src');
+        try { player.load(); } catch {}
         mediaSource = new MediaSource();
         player.src = URL.createObjectURL(mediaSource);
         mediaSource.addEventListener('sourceopen', () => {
@@ -104,19 +107,18 @@
           metaEl.textContent = `by ${resp.creator} · ${resp.viewers} watching`;
           currentMimeType = resp.mimeType;
           setupMediaSource(resp.mimeType);
-          if (resp.initChunk) {
-            awaitingInit = false;
-            queue.push(resp.initChunk);
-          } else {
-            awaitingInit = true;
-          }
+          awaitingInit = !resp.hasInit;
         });
       });
 
+      socket.on('viewer:init', (chunk) => {
+        awaitingInit = false;
+        queue.push(chunk);
+        flush();
+      });
+
       socket.on('viewer:chunk', (chunk) => {
-        if (awaitingInit) {
-          awaitingInit = false;
-        }
+        if (awaitingInit) return;
         queue.push(chunk);
         flush();
       });

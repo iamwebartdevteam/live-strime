@@ -70,8 +70,12 @@ io.on('connection', (socket) => {
     const stream = streams.get(streamId);
     if (!stream || stream.creatorSocketId !== socket.id) return;
 
-    if (!stream.initChunk) stream.initChunk = chunk;
-    socket.to(`stream:${streamId}`).emit('viewer:chunk', chunk);
+    if (!stream.initChunk) {
+      stream.initChunk = chunk;
+      socket.to(`stream:${streamId}`).emit('viewer:init', chunk);
+    } else {
+      socket.to(`stream:${streamId}`).emit('viewer:chunk', chunk);
+    }
   });
 
   socket.on('creator:stop', () => {
@@ -107,9 +111,13 @@ io.on('connection', (socket) => {
       title: stream.title,
       creator: stream.creator,
       mimeType: stream.mimeType,
-      initChunk: stream.initChunk,
+      hasInit: !!stream.initChunk,
       viewers: stream.viewers
     });
+
+    if (stream.initChunk) {
+      socket.emit('viewer:init', stream.initChunk);
+    }
 
     console.log(`[viewer:join] ${username} → ${streamId} (total ${stream.viewers})`);
   });
