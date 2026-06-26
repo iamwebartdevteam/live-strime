@@ -71,16 +71,26 @@
         });
       }
 
+      let currentMimeType = null;
+      let awaitingInit = false;
+
       function flush() {
         if (!sourceBuffer || sourceBuffer.updating || !queue.length) return;
+        const chunk = queue.shift();
         try {
-          sourceBuffer.appendBuffer(queue.shift());
+          sourceBuffer.appendBuffer(chunk);
         } catch (e) {
           if (e.name === 'QuotaExceededError') {
             try {
               const end = player.currentTime - 5;
               if (end > 0) sourceBuffer.remove(0, end);
+              queue.unshift(chunk);
             } catch {}
+          } else if (player.error || e.name === 'InvalidStateError') {
+            console.warn('Append failed, rebuilding MediaSource:', e.message);
+            awaitingInit = true;
+            queue.length = 0;
+            if (currentMimeType) setupMediaSource(currentMimeType);
           } else {
             console.error(e);
           }
@@ -92,20 +102,29 @@
           if (resp.error) { errEl.textContent = resp.error; return; }
           titleEl.textContent = resp.title;
           metaEl.textContent = `by ${resp.creator} · ${resp.viewers} watching`;
+          currentMimeType = resp.mimeType;
           setupMediaSource(resp.mimeType);
           if (resp.initChunk) {
+            awaitingInit = false;
             queue.push(resp.initChunk);
+          } else {
+            awaitingInit = true;
           }
         });
       });
 
       socket.on('viewer:chunk', (chunk) => {
+        if (awaitingInit) {
+          awaitingInit = false;
+        }
         queue.push(chunk);
         flush();
       });
 
       socket.on('stream:reset', ({ mimeType }) => {
         errEl.textContent = '';
+        currentMimeType = mimeType;
+        awaitingInit = true;
         setupMediaSource(mimeType);
       });
 
