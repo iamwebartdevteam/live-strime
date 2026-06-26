@@ -203,11 +203,7 @@
           audioCtx = null;
           const newStream = await acquireStream(newSource);
 
-          if (recorder) {
-            recorder.ondataavailable = null;
-            if (recorder.state !== 'inactive') { try { recorder.stop(); } catch {} }
-            recorder = null;
-          }
+          if (recorder && recorder.state !== 'inactive') recorder.stop();
           if (previousStream) previousStream.getTracks().forEach(t => t.stop());
           previousExtras.forEach(s => s.getTracks().forEach(t => t.stop()));
           if (previousAudioCtx) previousAudioCtx.close().catch(() => {});
@@ -232,11 +228,7 @@
       });
 
       stopBtn.onclick = () => {
-        if (recorder) {
-          recorder.ondataavailable = null;
-          if (recorder.state !== 'inactive') { try { recorder.stop(); } catch {} }
-          recorder = null;
-        }
+        if (recorder && recorder.state !== 'inactive') recorder.stop();
         stopAllTracks();
         socket.emit('creator:stop');
         statusEl.textContent = 'Not streaming';

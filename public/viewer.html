@@ -57,9 +57,6 @@
       function setupMediaSource(mimeType) {
         sourceBuffer = null;
         queue = [];
-        try { player.pause(); } catch {}
-        player.removeAttribute('src');
-        try { player.load(); } catch {}
         mediaSource = new MediaSource();
         player.src = URL.createObjectURL(mediaSource);
         mediaSource.addEventListener('sourceopen', () => {
@@ -74,26 +71,16 @@
         });
       }
 
-      let currentMimeType = null;
-      let awaitingInit = false;
-
       function flush() {
         if (!sourceBuffer || sourceBuffer.updating || !queue.length) return;
-        const chunk = queue.shift();
         try {
-          sourceBuffer.appendBuffer(chunk);
+          sourceBuffer.appendBuffer(queue.shift());
         } catch (e) {
           if (e.name === 'QuotaExceededError') {
             try {
               const end = player.currentTime - 5;
               if (end > 0) sourceBuffer.remove(0, end);
-              queue.unshift(chunk);
             } catch {}
-          } else if (player.error || e.name === 'InvalidStateError') {
-            console.warn('Append failed, rebuilding MediaSource:', e.message);
-            awaitingInit = true;
-            queue.length = 0;
-            if (currentMimeType) setupMediaSource(currentMimeType);
           } else {
             console.error(e);
           }
@@ -105,28 +92,20 @@
           if (resp.error) { errEl.textContent = resp.error; return; }
           titleEl.textContent = resp.title;
           metaEl.textContent = `by ${resp.creator} · ${resp.viewers} watching`;
-          currentMimeType = resp.mimeType;
           setupMediaSource(resp.mimeType);
-          awaitingInit = !resp.hasInit;
+          if (resp.initChunk) {
+            queue.push(resp.initChunk);
+          }
         });
       });
 
-      socket.on('viewer:init', (chunk) => {
-        awaitingInit = false;
-        queue.push(chunk);
-        flush();
-      });
-
       socket.on('viewer:chunk', (chunk) => {
-        if (awaitingInit) return;
         queue.push(chunk);
         flush();
       });
 
       socket.on('stream:reset', ({ mimeType }) => {
         errEl.textContent = '';
-        currentMimeType = mimeType;
-        awaitingInit = true;
         setupMediaSource(mimeType);
       });
 
